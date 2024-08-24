@@ -17,6 +17,9 @@ connection.once("open", () => {
   console.log("MongoDB database connection established successfully");
 });
 
+app.get("/", (req, res) => {
+  res.send("hello world");
+});
 
 const authRouter = require("./routes/auth");
 app.use("/auth", authRouter);
