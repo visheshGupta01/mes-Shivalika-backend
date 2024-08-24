@@ -20,23 +20,25 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid Password" });
     }
 
-    const payload = {
-      user: {
-        id: user.id,
-        userType: user.userType,
-      },
-    };
+    if (user) {
+      const payload = {
+        user: {
+          id: user.id,
+          userType: user.userType,
+        },
+      };
 
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" },
-      (err, token) => {
-        if (err) throw err;
-        console.log("Generated token:", token); // Log generated token
-        res.json({ token, user });
-      }
-    );
+      jwt.sign(
+        payload,
+        process.env.JWT_SECRET,
+        { expiresIn: "1h" },
+        (err, token) => {
+          if (err) throw err;
+          console.log("Generated token:", token); // Log generated token
+          res.json({ token, user });
+        }
+      );
+    }
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server error");

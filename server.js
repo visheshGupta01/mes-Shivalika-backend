@@ -1,10 +1,10 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-require("dotenv").config();
+require("dotenv").config({ path: `.env.${process.env.NODE_ENV}` }); // Load environment-specific file
 
 const app = express();
-const port = process.env.PORT || 10000;
+const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
@@ -31,5 +31,5 @@ const productionRouter = require("./routes/productionData");
 app.use("/productionData", productionRouter);
 
 app.listen(port, () => {
-  console.log(`Server is running on port: ${port}`);
+  console.log(`Server running in ${process.env.NODE_ENV} mode on port ${port}`);
 });
