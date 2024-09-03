@@ -8,7 +8,7 @@ const Order = require("../models/Order");
 router.get("/products", async (req, res) => {
   try {
     const products = await Product.find();
-      res.json(products);
+    res.json(products);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -70,7 +70,6 @@ router.put("/:id/process/:processId", async (req, res) => {
   }
 });
 
-
 router.post("/addProduction", async (req, res) => {
   const { processName, productionData } = req.body;
 
@@ -84,7 +83,6 @@ router.post("/addProduction", async (req, res) => {
     }
 
     for (const [size, value] of Object.entries(productionData)) {
-
       // Find the index of the size in the sizes array
       const sizeIndex = production.sizes.findIndex((s) => s.size === size);
 
@@ -109,24 +107,29 @@ router.post("/addProduction", async (req, res) => {
 });
 
 router.post("/updateProductionPerDayPerMachine", async (req, res) => {
-  const { filteredProductsBySizes, processName, productionPerDayPerMachine } = req.body;
- try {
+  const { filteredProductsBySizes, processName, productionPerDayPerMachine } =
+    req.body;
+  try {
     for (const productData of filteredProductsBySizes) {
       const product = await Product.findById(productData._id);
-      if (!product) return res.status(404).json({ message: "Product not found" });
+      if (!product)
+        return res.status(404).json({ message: "Product not found" });
 
       const process = product.processes.find(
         (p) => p.processName === processName
       );
 
-      if (!process) return res.status(404).json({ message: "Process not found" });
+      if (!process)
+        return res.status(404).json({ message: "Process not found" });
 
       process.productionPerDayPerMachine = productionPerDayPerMachine;
 
       await product.save();
     }
 
-    res.status(200).json({ message: "Production per day per machine updated successfully" });
+    res
+      .status(200)
+      .json({ message: "Production per day per machine updated successfully" });
   } catch (error) {
     res.status(500).json({
       message: "Failed to update production per day per machine",
@@ -134,18 +137,15 @@ router.post("/updateProductionPerDayPerMachine", async (req, res) => {
     });
   }
 });
-
 router.post("/updateProcessStatus", async (req, res) => {
-  const { productId} = req.body;
+  const { productId } = req.body;
 
   try {
     const product = await Product.findById(productId);
     if (!product) return res.status(404).json({ message: "Product not found" });
 
     // Check if all processes are completed
-    const allCompleted = product.processes.every(
-      (p) => p.completed === true
-    );
+    const allCompleted = product.processes.every((p) => p.completed === true);
 
     if (allCompleted) {
       product.completed = true; // Update product status
@@ -153,69 +153,63 @@ router.post("/updateProcessStatus", async (req, res) => {
 
       if (!order) {
         console.error("No order found containing the product");
-        return;
+        return res.status(404).json({ message: "Order not found" });
       }
-      console.log("Order: ", order);
+
+      // Update the completed status of the product in the order
       order.products = order.products.map((product) =>
         product.productId.equals(productId)
           ? { ...product, completed: true }
           : product
       );
 
-      // Save the updated order
-      await order.save();
+      await order.save(); // Save the updated order
       console.log(
         `Updated product status to "Completed" in order ${order._id}`
       );
-
-    }
-    else {
+    } else {
       product.completed = false;
     }
 
-    await product.save();
+    await product.save(); // Save the updated product status
 
     res
       .status(200)
       .json({ message: "Process and product status updated successfully" });
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to update process and product status",
-      error,
-    });
+    console.error("Failed to update process status:", error);
+    res.status(500).json({ message: "Failed to update process status", error });
   }
 });
 
-
 router.post("/updateOrderStatus", async (req, res) => {
   const { productId } = req.body;
-  console.log("Running Order Update")
-  console.log("productId: ", productId)
-  try {
-    // Find the order that contains the product
-    const order = await Order.findOne({ "products.productId": productId });
 
+  try {
+    const order = await Order.findOne({ "products.productId": productId });
     if (!order) {
       console.error("No order found containing the product");
-      return;
+      return res.status(404).json({ message: "Order not found" });
     }
-console.log("Order: ", order)
+
     // Check if all products in the order are completed
     const allCompleted = order.products.every(
       (product) => product.completed === true
     );
 
     if (allCompleted) {
-      // Set the order's status to "Completed"
-      order.completed = true;
-      await order.save();
-      console.log(`Order ${order._id} is now marked as completed`);
+      order.completed = true; // Set the order's status to "Completed"
+      await order.save(); // Save the updated order status
+
+      res.status(200).json({ message: "Order status updated successfully" });
+    } else {
+      res
+        .status(200)
+        .json({ message: "Not all products in the order are completed" });
     }
   } catch (error) {
-    res.status(500).json({
-      message: "Failed to update process and product status",
-      error,
-    });
+    console.error("Failed to update order status:", error);
+    res.status(500).json({ message: "Failed to update order status", error });
   }
 });
 

@@ -5,6 +5,7 @@ const xlsx = require("xlsx");
 const parseExcelFile = async (buffer) => {
   const workbook = xlsx.read(buffer, { type: "buffer" });
   const sheets = workbook.SheetNames;
+  console.log(sheets)
   const products = [];
 
   const parseDate = (date) => {
@@ -23,6 +24,7 @@ const parseExcelFile = async (buffer) => {
     const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheet], {
       defval: "",
     });
+    
 
     for (const row of data) {
       try {

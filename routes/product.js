@@ -15,6 +15,15 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 let tempProducts = []; // Temporary storage for products with new styles
 
+
+// Function to trim all string fields in an object
+const trimObject = (obj) => {
+  for (const key in obj) {
+    if (typeof obj[key] === "string") {
+      obj[key] = obj[key].trim();
+    }
+  }
+};
 const calculateWeekNumber = (date) => {
   return moment(date).week();
 };
@@ -22,8 +31,8 @@ const calculateWeekNumber = (date) => {
 const addUniqueBuyers = async (buyers) => {
   const bulkOps = buyers.map((buyerName) => ({
     updateOne: {
-      filter: { name: buyerName },
-      update: { $setOnInsert: { name: buyerName } },
+      filter: { name: buyerName.trim() },
+      update: { $setOnInsert: { name: buyerName.trim() } },
       upsert: true,
     },
   }));
@@ -88,8 +97,8 @@ router.post("/importExcel", upload.single("file"), async (req, res) => {
     const orderUpdates = {};
     const uniqueBuyers = new Set();
     const missingProductionData = []; // Array to store missing production data
-
     for (const product of products) {
+  trimObject(product);
       uniqueBuyers.add(product.buyer);
       const existingStyle = await Style.findOne({
         styleName: product.styleName,
@@ -100,13 +109,13 @@ router.post("/importExcel", upload.single("file"), async (req, res) => {
           existingStyle.processes.map(async (proc) => {
             let productionPerDayPerMachine = 0;
             const existingProcess = await Production.findOne({
-              processName: proc.processName,
-              "sizes.size": product.size, // Check if the process has production for this size
+              processName: proc.processName.trim(),
+              "sizes.size": product.size.trim(), // Check if the process has production for this size
             });
 console.log(existingProcess)
             if (existingProcess) {
               const sizeObj = existingProcess.sizes.find(
-                (s) => s.size === product.size
+                (s) => s.size === product.size.trim()
               );
               if (sizeObj) {
                 console.log(sizeObj.productionPerDayPerMachine);
@@ -115,13 +124,13 @@ console.log(existingProcess)
             } else {
               // If no existing process is found, store the process name and size
               missingProductionData.push({
-                processName: proc.processName,
-                size: product.size,
+                processName: proc.processName.trim(),
+                size: product.size.trim(),
               });
             }
 
             return {
-              processName: proc.processName,
+              processName: proc.processName.trim(),
               entries: [],
               order: proc.order,
               completed: false,
@@ -249,6 +258,8 @@ router.get("/orders", async (req, res) => {
 router.post("/addStyleProcesses", async (req, res) => {
   try {
     const { styles } = req.body;
+    const orderUpdates = {};
+    const missingProductionData = [];
 
     // Save all styles
     for (const style of styles) {
@@ -256,69 +267,58 @@ router.post("/addStyleProcesses", async (req, res) => {
       await newStyle.save();
     }
 
-    // Prepare to update orders
-    const orderUpdates = {};
-
     for (const product of tempProducts) {
-      // Find the existing style for the product
       const existingStyle = await Style.findOne({
         styleName: product.styleName,
       });
-console.log(product)
+
       if (existingStyle) {
-        // Map and set processes for the product
         product.processes = await Promise.all(
           existingStyle.processes.map(async (proc) => {
-            try {
-              let productionPerDayPerMachine = null;
-              const existingProcess = await Production.findOne({
-                processName: proc.processName,
-                "sizes.size": product.size, // Check if the process has production for this size
-              });
+            let productionPerDayPerMachine = 0;
+            const existingProcess = await Production.findOne({
+              processName: proc.processName.trim(),
+              "sizes.size": product.size.trim(),
+            });
 
-              if (existingProcess) {
-                const sizeObj = existingProcess.sizes.find(
-                  (s) => s.size === product.size
-                );
-                if (sizeObj) {
-                  productionPerDayPerMachine =
-                    sizeObj.productionPerDayPerMachine;
-                }
-              }
-
-              return {
-                processName: proc.processName,
-                entries: [],
-                order: proc.order,
-                completed: false,
-                totalProduction: 0,
-                productionPerDayPerMachine, // This can be null if not found
-              };
-            } catch (err) {
-              console.error(
-                `Error processing ${proc.processName} for product ${product.styleName}:`,
-                err.message
+            if (existingProcess) {
+              const sizeObj = existingProcess.sizes.find(
+                (s) => s.size === product.size.trim()
               );
-              throw new Error("Failed to process product details");
+              if (sizeObj) {
+                productionPerDayPerMachine = sizeObj.productionPerDayPerMachine;
+              }
+            } else {
+              // Store missing production data
+              missingProductionData.push({
+                processName: proc.processName.trim(),
+                size: product.size.trim(),
+              });
             }
+
+            return {
+              processName: proc.processName.trim(),
+              entries: [],
+              order: proc.order,
+              completed: false,
+              totalProduction: 0,
+              productionPerDayPerMachine: productionPerDayPerMachine || null,
+            };
           })
         );
-console.log("Product Processes:", product.processes);
 
-        // Calculate process dates for the product
+        // Calculate process dates
         calculateProcessDates(product);
 
-        // Save the new product
         const newProduct = new Product(product);
         await newProduct.save();
 
-        // Prepare order updates
         if (!orderUpdates[product.srNo]) {
           orderUpdates[product.srNo] = {
             srNo: product.srNo,
             buyer: product.buyer,
             buyerPO: product.buyerPO,
-            week: calculateWeekNumber(product.exFactoryDate), // Calculate and add the week number
+            week: calculateWeekNumber(product.exFactoryDate),
             completed: false,
             exFactoryDate: product.exFactoryDate,
             products: [],
@@ -333,7 +333,6 @@ console.log("Product Processes:", product.processes);
       }
     }
 
-    // Save orders
     const orderPromises = Object.values(orderUpdates).map(async (orderData) => {
       let order = await Order.findOne({ srNo: orderData.srNo });
       if (order) {
@@ -347,10 +346,17 @@ console.log("Product Processes:", product.processes);
 
     await Promise.all(orderPromises);
 
+    // Log or handle missing production data as needed
+    if (missingProductionData.length > 0) {
+      console.log(
+        "Missing production data for the following processes and sizes:",
+        missingProductionData
+      );
+    }
+
     // Clear the temporary storage
     tempProducts = [];
 
-    // Send success response
     res.status(201).json({
       message: "Styles, processes, products, and orders saved successfully",
     });
