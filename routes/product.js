@@ -257,81 +257,80 @@ router.get("/orders", async (req, res) => {
 // Add styles and processes
 router.post("/addStyleProcesses", async (req, res) => {
   try {
-    const { styles } = req.body;
+    const { styles} = req.body; // Expecting addLater flag in the request
     const orderUpdates = {};
     const missingProductionData = [];
 
-    // Save all styles
-    for (const style of styles) {
-      const newStyle = new Style(style);
-      await newStyle.save();
-    }
-
-    for (const product of tempProducts) {
-      const existingStyle = await Style.findOne({
-        styleName: product.styleName,
-      });
-
-      if (existingStyle) {
-        product.processes = await Promise.all(
-          existingStyle.processes.map(async (proc) => {
-            let productionPerDayPerMachine = 0;
-            const existingProcess = await Production.findOne({
-              processName: proc.processName.trim(),
-              "sizes.size": product.size.trim(),
-            });
-
-            if (existingProcess) {
-              const sizeObj = existingProcess.sizes.find(
-                (s) => s.size === product.size.trim()
-              );
-              if (sizeObj) {
-                productionPerDayPerMachine = sizeObj.productionPerDayPerMachine;
-              }
-            } else {
-              // Store missing production data
-              missingProductionData.push({
-                processName: proc.processName.trim(),
-                size: product.size.trim(),
-              });
-            }
-
-            return {
-              processName: proc.processName.trim(),
-              entries: [],
-              order: proc.order,
-              completed: false,
-              totalProduction: 0,
-              productionPerDayPerMachine: productionPerDayPerMachine || null,
-            };
-          })
-        );
-
-        // Calculate process dates
-        calculateProcessDates(product);
-
-        const newProduct = new Product(product);
-        await newProduct.save();
-
-        if (!orderUpdates[product.srNo]) {
-          orderUpdates[product.srNo] = {
-            srNo: product.srNo,
-            buyer: product.buyer,
-            buyerPO: product.buyerPO,
-            week: calculateWeekNumber(product.exFactoryDate),
-            completed: false,
-            exFactoryDate: product.exFactoryDate,
-            products: [],
-          };
-        }
-
-        orderUpdates[product.srNo].products.push({
-          productId: newProduct._id,
-          quantity: product.quantity,
-          status: "Pending",
-        });
+      for (const style of styles) {
+        const newStyle = new Style(style);
+        await newStyle.save();
       }
-    }
+
+      for (const product of tempProducts) {
+        const existingStyle = await Style.findOne({
+          styleName: product.styleName,
+        });
+
+        if (existingStyle) {
+          product.processes = await Promise.all(
+            existingStyle.processes.map(async (proc) => {
+              let productionPerDayPerMachine = 0;
+              const existingProcess = await Production.findOne({
+                processName: proc.processName.trim(),
+                "sizes.size": product.size.trim(),
+              });
+
+              if (existingProcess) {
+                const sizeObj = existingProcess.sizes.find(
+                  (s) => s.size === product.size.trim()
+                );
+                if (sizeObj) {
+                  productionPerDayPerMachine = sizeObj.productionPerDayPerMachine;
+                }
+              } else {
+                // Store missing production data
+                missingProductionData.push({
+                  processName: proc.processName.trim(),
+                  size: product.size.trim(),
+                });
+              }
+
+              return {
+                processName: proc.processName.trim(),
+                entries: [],
+                order: proc.order,
+                completed: false,
+                totalProduction: 0,
+                productionPerDayPerMachine: productionPerDayPerMachine || null,
+              };
+            })
+          );
+
+          // Calculate process dates
+          calculateProcessDates(product);
+
+          const newProduct = new Product(product);
+          await newProduct.save();
+
+          if (!orderUpdates[product.srNo]) {
+            orderUpdates[product.srNo] = {
+              srNo: product.srNo,
+              buyer: product.buyer,
+              buyerPO: product.buyerPO,
+              week: calculateWeekNumber(product.exFactoryDate),
+              completed: false,
+              exFactoryDate: product.exFactoryDate,
+              products: [],
+            };
+          }
+
+          orderUpdates[product.srNo].products.push({
+            productId: newProduct._id,
+            quantity: product.quantity,
+            status: "Pending",
+          });
+        }
+      }
 
     const orderPromises = Object.values(orderUpdates).map(async (orderData) => {
       let order = await Order.findOne({ srNo: orderData.srNo });

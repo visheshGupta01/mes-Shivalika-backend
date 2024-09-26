@@ -33,6 +33,9 @@ app.use("/product", productRouter);
 const productionRouter = require("./routes/productionData");
 app.use("/productionData", productionRouter);
 
+const stylesAndProductionsRouter= require("./routes/stylesAndProductions");
+app.use("/stylesAndProductions", stylesAndProductionsRouter);
+
 app.listen(port, () => {
   console.log(`Server running in ${process.env.NODE_ENV} mode on port ${port}`);
 });
