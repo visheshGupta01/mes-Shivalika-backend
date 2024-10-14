@@ -90,16 +90,17 @@ router.post("/importExcel", upload.single("file"), async (req, res) => {
     }
 
     const products = await parseExcelFile(req.file.buffer);
-    console.log("Parsed Products:", products);
 
     const stylesToPrompt = new Set();
     const productsToSave = [];
     const orderUpdates = {};
     const uniqueBuyers = new Set();
-    const missingProductionData = []; // Array to store missing production data
+    const missingProductionData = [];
+
     for (const product of products) {
-  trimObject(product);
+      trimObject(product);
       uniqueBuyers.add(product.buyer);
+
       const existingStyle = await Style.findOne({
         styleName: product.styleName,
       });
@@ -108,25 +109,42 @@ router.post("/importExcel", upload.single("file"), async (req, res) => {
         product.processes = await Promise.all(
           existingStyle.processes.map(async (proc) => {
             let productionPerDayPerMachine = 0;
-            const existingProcess = await Production.findOne({
+
+            // Find the existing process by processName
+            let existingProcess = await Production.findOne({
               processName: proc.processName.trim(),
-              "sizes.size": product.size.trim(), // Check if the process has production for this size
             });
-console.log(existingProcess)
+
             if (existingProcess) {
-              const sizeObj = existingProcess.sizes.find(
+              // Check if size already exists in the process's sizes array
+              let sizeObj = existingProcess.sizes.find(
                 (s) => s.size === product.size.trim()
               );
-              if (sizeObj) {
-                console.log(sizeObj.productionPerDayPerMachine);
+
+              if (!sizeObj) {
+                // Size does not exist, add it with null value
+                existingProcess.sizes.push({
+                  size: product.size.trim(),
+                  productionPerDayPerMachine: null,
+                });
+                await existingProcess.save(); // Save the updated process document
+              } else {
+                // Size exists, use its productionPerDayPerMachine
                 productionPerDayPerMachine = sizeObj.productionPerDayPerMachine;
+
               }
             } else {
-              // If no existing process is found, store the process name and size
-              missingProductionData.push({
+              // If no existing process found, create a new document
+              const newProcess = new Production({
                 processName: proc.processName.trim(),
-                size: product.size.trim(),
+                sizes: [
+                  {
+                    size: product.size.trim(),
+                    productionPerDayPerMachine: null,
+                  },
+                ],
               });
+              await newProcess.save(); // Save the new process document
             }
 
             return {
@@ -135,12 +153,11 @@ console.log(existingProcess)
               order: proc.order,
               completed: false,
               totalProduction: 0,
-              productionPerDayPerMachine: productionPerDayPerMachine || null, // Only set if a value exists, otherwise set to null
+              productionPerDayPerMachine: productionPerDayPerMachine || null,
             };
           })
         );
 
-        // Calculate process dates
         calculateProcessDates(product);
         productsToSave.push(product);
       } else {
@@ -149,16 +166,6 @@ console.log(existingProcess)
       }
     }
 
-    // Log or handle the missing production data as needed
-    if (missingProductionData.length > 0) {
-      console.log(
-        "Missing production data for the following processes and sizes:",
-        missingProductionData
-      );
-      // You could also store this data in a database, or send a response to the client, etc.
-    }
-
-    // Add unique buyers to the database
     await addUniqueBuyers(Array.from(uniqueBuyers));
 
     for (const product of productsToSave) {
@@ -170,7 +177,7 @@ console.log(existingProcess)
           srNo: product.srNo,
           buyer: product.buyer,
           buyerPO: product.buyerPO,
-          week: calculateWeekNumber(product.exFactoryDate), // Add week number
+          week: calculateWeekNumber(product.exFactoryDate),
           completed: false,
           exFactoryDate: product.exFactoryDate,
           products: [],
@@ -184,11 +191,10 @@ console.log(existingProcess)
       });
     }
 
-    // Save orders
     const orderPromises = Object.values(orderUpdates).map(async (orderData) => {
       let order = await Order.findOne({ srNo: orderData.srNo });
       if (order) {
-        order.completed = false
+        order.completed = false;
         order.products = [...order.products, ...orderData.products];
       } else {
         order = new Order(orderData);
@@ -198,7 +204,6 @@ console.log(existingProcess)
 
     await Promise.all(orderPromises);
 
-    // Check for styles needing processes
     if (stylesToPrompt.size > 0) {
       return res.status(200).json({
         message:
@@ -211,10 +216,10 @@ console.log(existingProcess)
       .status(201)
       .json({ message: "Products and orders imported successfully" });
   } catch (error) {
-    console.error("Error importing Excel file:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 // Add a new order or update an existing order
 router.post("/addOrder", async (req, res) => {
@@ -345,14 +350,6 @@ router.post("/addStyleProcesses", async (req, res) => {
 
     await Promise.all(orderPromises);
 
-    // Log or handle missing production data as needed
-    if (missingProductionData.length > 0) {
-      console.log(
-        "Missing production data for the following processes and sizes:",
-        missingProductionData
-      );
-    }
-
     // Clear the temporary storage
     tempProducts = [];
 
@@ -360,7 +357,6 @@ router.post("/addStyleProcesses", async (req, res) => {
       message: "Styles, processes, products, and orders saved successfully",
     });
   } catch (error) {
-    console.error("Error in adding style processes:", error.message);
     res
       .status(400)
       .json({ error: "Failed to save style processes and products" });
@@ -376,7 +372,6 @@ router.get("/sortedOrders", async (req, res) => {
 
     res.status(200).json(orders);
   } catch (error) {
-    console.error("Error fetching sorted orders:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -388,7 +383,6 @@ router.post("/getProductDetails", async (req, res) => {
     const products = await Product.find({ _id: { $in: ids } });
     res.status(200).json(products);
   } catch (error) {
-    console.error("Error fetching product details:", error);
     res.status(500).json({ error: "Failed to fetch product details" });
   }
 });

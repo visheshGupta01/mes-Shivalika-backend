@@ -5,7 +5,7 @@ const productionSchema = new mongoose.Schema({
   sizes: [
     {
       size: { type: String },
-      productionPerDayPerMachine: { type: Number, required: true },
+      productionPerDayPerMachine: { type: Number, default: null }, // Remove required and add default value
     },
   ],
 });

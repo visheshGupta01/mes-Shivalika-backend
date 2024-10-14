@@ -5,7 +5,6 @@ const Production = require("../models/Production");
 const Product = require("../models/Product"); // Assuming Product schema is defined
 const moment = require("moment");
 
-
 const calculateProcessDates = (product, importDate) => {
   if (!product.exFactoryDate) {
     throw new Error(
@@ -48,7 +47,6 @@ router.post("/submitProcesses", async (req, res) => {
     // Step 1: Check if style exists
     let existingStyle = await Style.findOne({ styleName });
     if (!existingStyle) {
-      console.log(styleName);
 
       // Create new style if it doesn't exist
       existingStyle = new Style({
@@ -83,26 +81,41 @@ router.post("/submitProcesses", async (req, res) => {
           let productionPerDayPerMachine = 0;
 
           // Check if production data is available for the process and product size
-          const existingProduction = await Production.findOne({
-            processName: proc.processName.trim(),
-            "sizes.size": product.size.trim(),
-          });
+let existingProcess = await Production.findOne({
+  processName: proc.processName.trim(),
+});
 
-          if (existingProduction) {
-            const sizeObj = existingProduction.sizes.find(
+
+          if (existingProcess) {
+            // Check if size already exists in the process's sizes array
+            let sizeObj = existingProcess.sizes.find(
               (s) => s.size === product.size.trim()
             );
-            if (sizeObj) {
+
+            if (!sizeObj) {
+              // Size does not exist, add it with null value
+              existingProcess.sizes.push({
+                size: product.size.trim(),
+                productionPerDayPerMachine: null,
+              });
+              await existingProcess.save(); // Save the updated process document
+            } else {
+              // Size exists, use its productionPerDayPerMachine
               productionPerDayPerMachine = sizeObj.productionPerDayPerMachine;
             }
           } else {
-            // If no existing production data is found, log the missing info
-            missingProductionData.push({
+            // If no existing process found, create a new document
+            const newProcess = new Production({
               processName: proc.processName.trim(),
-              size: product.size.trim(),
+              sizes: [
+                {
+                  size: product.size.trim(),
+                  productionPerDayPerMachine: null,
+                },
+              ],
             });
+            await newProcess.save(); // Save the new process document
           }
-
           return {
             processName: proc.processName.trim(),
             entries: [],
@@ -113,7 +126,7 @@ router.post("/submitProcesses", async (req, res) => {
           };
         })
       );
-        calculateProcessDates(product);
+      calculateProcessDates(product);
 
       // Save the updated product
       await product.save();
@@ -121,31 +134,80 @@ router.post("/submitProcesses", async (req, res) => {
 
     // Step 5: Return response
     if (missingProductionData.length > 0) {
-      console.log(
-        "Missing production data for processes and sizes:",
-        missingProductionData
-      );
       return res.status(200).json({
-        message:
-          "Processes submitted successfully, but some production data is missing.",
-        missingProductionData,
+        existingStyle,
       });
     }
 
-    res.status(200).json({
-      message:
-        "Processes submitted, styles updated, and products updated successfully",
-    });
+    res.status(200).json({ existingStyle});
   } catch (error) {
-    console.error("Error submitting processes:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+router.post("/submitProduction", async (req, res) => {
+  try {
+    const { productionData } = req.body;
+
+    const processName = productionData.processName;
+    const size = productionData.size; // Single size string
+    const productionPerDayPerMachine =
+      productionData.productionPerDayPerMachine; // Production value
+
+    // Find and update the process for the given processName and single size
+    await Production.findOneAndUpdate(
+      { processName, "sizes.size": size }, // Find the process by name and size
+      {
+        $set: {
+          "sizes.$.productionPerDayPerMachine": productionPerDayPerMachine, // Update production value for the given size
+        },
+      },
+      { upsert: true, new: true } // If no document is found, create a new one (upsert: true)
+    );
+
+    // Check if any matching products exist before updating
+    const products = await Product.find({
+      "processes.processName": processName,
+      size: size,
+    });
+
+    if (products.length === 0) {
+      return res.status(404).json({ message: "No matching products found." });
+    }
+
+    // Update the productionPerDayPerMachine for the given processName and size
+    const updateResult = await Product.updateMany(
+      {
+        "processes.processName": processName, // Match the process by processName
+        size: size, // Match the product by size
+        "processes.productionPerDayPerMachine": null, // Only update where production is currently null
+      },
+      {
+        $set: {
+          "processes.$[process].productionPerDayPerMachine":
+            productionPerDayPerMachine, // Set the new value
+        },
+      },
+      {
+        arrayFilters: [{ "process.processName": processName }], // Array filter for the processes array
+      }
+    );
+
+
+    if (updateResult.modifiedCount > 0) {
+      res.status(200).json({ processName, size, productionPerDayPerMachine });
+    } else {
+      res.status(404).json({ message: "No products were updated." });
+    }
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "An error occurred while updating production data." });
   }
 });
 
 // GET styles
 router.get("/styles", async (req, res) => {
   try {
-    console.log("Thiswascalled");
     const styles = await Style.find();
     res.json(styles);
   } catch (error) {

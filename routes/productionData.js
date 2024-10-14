@@ -106,37 +106,6 @@ router.post("/addProduction", async (req, res) => {
   }
 });
 
-router.post("/updateProductionPerDayPerMachine", async (req, res) => {
-  const { filteredProductsBySizes, processName, productionPerDayPerMachine } =
-    req.body;
-  try {
-    for (const productData of filteredProductsBySizes) {
-      const product = await Product.findById(productData._id);
-      if (!product)
-        return res.status(404).json({ message: "Product not found" });
-
-      const process = product.processes.find(
-        (p) => p.processName === processName
-      );
-
-      if (!process)
-        return res.status(404).json({ message: "Process not found" });
-
-      process.productionPerDayPerMachine = productionPerDayPerMachine;
-
-      await product.save();
-    }
-
-    res
-      .status(200)
-      .json({ message: "Production per day per machine updated successfully" });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to update production per day per machine",
-      error,
-    });
-  }
-});
 router.post("/updateProcessStatus", async (req, res) => {
   const { productId } = req.body;
 
