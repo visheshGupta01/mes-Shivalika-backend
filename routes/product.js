@@ -90,7 +90,7 @@ router.post("/importExcel", upload.single("file"), async (req, res) => {
     }
 
     const products = await parseExcelFile(req.file.buffer);
-
+console.log(products.length)
     const stylesToPrompt = new Set();
     const productsToSave = [];
     const orderUpdates = {};
